@@ -2,6 +2,8 @@ import { Component, OnInit } from '@angular/core';
 import { EventResponse, EmergencyEvent, Acknowledgement } from '../interfaces';
 import { ActivatedRoute } from '@angular/router';
 import { EventsService } from '../events.service';
+import { Network } from '@ngx-pwa/offline';
+
 
 @Component({
   selector: 'app-details',
@@ -14,10 +16,12 @@ export class DetailsPage implements OnInit {
   event: EmergencyEvent;
   acknowledments: Acknowledgement[] = [];
   newNote = '';
+  online$ = this.network.onlineChanges;
 
   constructor(
     private route: ActivatedRoute,
-    private eventService: EventsService
+    private eventService: EventsService,
+    private network: Network
   ) { }
 
   async ngOnInit() {
