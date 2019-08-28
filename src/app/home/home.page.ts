@@ -1,11 +1,11 @@
 import { Component, OnInit, OnDestroy, ApplicationRef } from '@angular/core';
-import { EventResponse } from '../interfaces';
-import { Subscription, interval, concat } from 'rxjs';
 import { EventsService } from '../events.service';
+import { EventResponse } from '../interfaces';
+import { Subscription, concat, interval } from 'rxjs';
+import { first } from 'rxjs/operators';
 import { NavController, ToastController, AlertController } from '@ionic/angular';
 import { Network } from '@ngx-pwa/offline';
-import { SwUpdate, UpdateAvailableEvent, UpdateActivatedEvent } from '@angular/service-worker';
-import { first } from 'rxjs/operators';
+import { SwUpdate, UpdateAvailableEvent } from '@angular/service-worker';
 
 @Component({
   selector: 'app-home',
@@ -15,61 +15,62 @@ import { first } from 'rxjs/operators';
 export class HomePage implements OnInit, OnDestroy {
   events: EventResponse[] = [];
   subscriptions: Subscription[] = [];
+  title = 'Notify';
   online$ = this.network.onlineChanges;
 
   constructor(
+    private alertController: AlertController,
+    private appRef: ApplicationRef,
     private eventService: EventsService,
     private nav: NavController,
     private network: Network,
-    private updater: SwUpdate,
     private toastController: ToastController,
-    private alertController: AlertController,
-    private appRef: ApplicationRef) { }
+    private updater: SwUpdate) {
+
+  }
+
+  ngOnInit(): void {
+    this.subscriptions.push(
+      this.eventService.getAll().subscribe(e => {
+        this.events.push(e);
+      }));
+
+    this.initUpdater();
+  }
 
   ngOnDestroy(): void {
     this.subscriptions.forEach(sub => sub.unsubscribe());
   }
 
-  ngOnInit(): void {
-    this.subscriptions.push(this.eventService.getAll().subscribe(e => this.events.push(e)));
-    this.initUpdater();
+  getEvents(): EventResponse[] {
+    return this.events.sort((a, b) => a.event.created > b.event.created ? -1 : 1);
+  }
+
+  details(event: EventResponse) {
+    this.nav.navigateForward(`/details/${event.event.id}`);
   }
 
   initUpdater() {
     // Allow the app to stabilize first, before starting polling for updates with `interval()`.
     // See https://angular.io/guide/service-worker-communications
-    const updateInterval$ = interval(1000 * 60 * 1);  // 1 minute - I don't recommend this! Just for test
+    const updateInterval$ = interval(1000 * 60 * 1);  // 1 minute - I don't recommend this!
     const appIsStable$ = this.appRef.isStable.pipe(first(isStable => isStable === true));
-    const appStableInterval$ = concat(appIsStable$, updateInterval$); // $at the back it means it is an anobservable
+    const appStableInterval$ = concat(appIsStable$, updateInterval$);
 
     // Warning! Make sure you use arrow functions here or suffer the wrath of `this`!
     if (this.updater.isEnabled) {
       console.log('Subscribing to updates...');
       this.subscriptions.push(appStableInterval$.subscribe(() => this.checkForUpdate()));
       this.subscriptions.push(this.updater.available.subscribe(e => this.onUpdateAvailable(e)));
-      this.subscriptions.push(this.updater.activated.subscribe((e) => this.onUpdateActivated(e)));
+      this.subscriptions.push(this.updater.activated.subscribe(() => this.onUpdateActivated()));
     }
   }
 
   async checkForUpdate() {
     if (this.updater.isEnabled) {
-      await this. updater.checkForUpdate();
+      console.log('Checking for updates...');
+      await this.updater.checkForUpdate();
     }
-  }
-
-  async onUpdateActivated(e: UpdateActivatedEvent) {
-    await this.showToastMessage('Application updating.');
-  }
-
-  async showToastMessage(msg: string) {
-    const toast = await this.toastController.create({
-      message: msg,
-      duration: 2000,
-      showCloseButton: true,
-      position: 'top',
-      closeButtonText: 'OK'
-    });
-    toast.present();
   }
 
   async onUpdateAvailable(event: UpdateAvailableEvent) {
@@ -78,15 +79,16 @@ export class HomePage implements OnInit, OnDestroy {
 
     const alert = await this.alertController.create({
       header: 'Update Available!',
-      message: 'New version is available.' +
+      message: 'A new version of the application is available. ' +
         `(Details: ${updateMessage}) ` +
         'Click OK to update now.',
       buttons: [
         {
           text: 'Not Now',
           role: 'cancel',
+          cssClass: 'secondary',
           handler: async () => {
-            this.showToastMessage('Update deferred');
+            await this.showToastMessage('Update deferred');
           }
         }, {
           text: 'OK',
@@ -97,15 +99,40 @@ export class HomePage implements OnInit, OnDestroy {
         }
       ]
     });
+
     await alert.present();
-
   }
 
-  getEvents(): EventResponse[] {
-    return this.events.sort((a, b) => a.event.created > b.event.created ? -1 : 1); //events >> array
+  async onUpdateActivated() {
+    await this.showToastMessage('Application updating.');
   }
 
-  details(response: EventResponse) {
-    this.nav.navigateForward(`/details/${response.event.id}`);
+  async showToastMessage(msg: string) {
+    console.log(msg);
+    const toast = await this.toastController.create({
+      message: msg,
+      duration: 2000,
+      showCloseButton: true,
+      position: 'top',
+      closeButtonText: 'OK'
+    });
+    toast.present();
+  }
+
+  async doRefresh(event) {
+    try {
+      const maxEvent = this.events
+        .reduce((prev, current)=> (prev.event.id > current.event.id) ? prev : current);
+      const maxEventId = +maxEvent.event.id + 1;
+
+      const response = await this.eventService.getById(maxEventId).toPromise();
+      this.events.push(response);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      event.target.complete();
+    }
   }
 }
+
+
