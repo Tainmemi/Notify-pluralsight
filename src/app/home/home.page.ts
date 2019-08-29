@@ -5,7 +5,7 @@ import { Subscription, concat, interval } from 'rxjs';
 import { first } from 'rxjs/operators';
 import { NavController, ToastController, AlertController } from '@ionic/angular';
 import { Network } from '@ngx-pwa/offline';
-import { SwUpdate, UpdateAvailableEvent } from '@angular/service-worker';
+import { SwUpdate, UpdateAvailableEvent, UpdateActivatedEvent } from '@angular/service-worker';
 
 @Component({
   selector: 'app-home',
@@ -58,12 +58,9 @@ export class HomePage implements OnInit, OnDestroy {
     const appStableInterval$ = concat(appIsStable$, updateInterval$);
 
     // Warning! Make sure you use arrow functions here or suffer the wrath of `this`!
-    if (this.updater.isEnabled) {
-      console.log('Subscribing to updates...');
-      this.subscriptions.push(appStableInterval$.subscribe(() => this.checkForUpdate()));
-      this.subscriptions.push(this.updater.available.subscribe(e => this.onUpdateAvailable(e)));
-      this.subscriptions.push(this.updater.activated.subscribe(() => this.onUpdateActivated()));
-    }
+    this.subscriptions.push(appStableInterval$.subscribe(() => this.checkForUpdate()));
+    this.subscriptions.push(this.updater.available.subscribe((e) => this.onUpdateAvailable(e)));
+    this.subscriptions.push(this.updater.activated.subscribe((e) => this.onUpdateActivated(e)));
   }
 
   async checkForUpdate() {
@@ -99,11 +96,10 @@ export class HomePage implements OnInit, OnDestroy {
         }
       ]
     });
-
     await alert.present();
   }
 
-  async onUpdateActivated() {
+  async onUpdateActivated(e: UpdateActivatedEvent) {
     await this.showToastMessage('Application updating.');
   }
 
@@ -122,7 +118,7 @@ export class HomePage implements OnInit, OnDestroy {
   async doRefresh(event) {
     try {
       const maxEvent = this.events
-        .reduce((prev, current)=> (prev.event.id > current.event.id) ? prev : current);
+        .reduce((prev, current) => (prev.event.id > current.event.id) ? prev : current);
       const maxEventId = +maxEvent.event.id + 1;
 
       const response = await this.eventService.getById(maxEventId).toPromise();
